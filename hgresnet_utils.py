@@ -2,7 +2,7 @@ import os
 import glob
 import torch
 from PIL import Image
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from pytorch_lightning import LightningModule
 import segmentation_models_pytorch as smp
 
@@ -30,7 +30,8 @@ class LitModel(LightningModule):
         super().__init__()
         self.model = model
         self.aux_coef = 0.4
-        self.loss_function = smp.losses.DiceLoss(mode="multiclass", classes = range(151), from_logits=True)
+        # データセットの形式の都合上、クラス数は151とし、index=0を無視するように実装
+        self.loss_function = smp.losses.DiceLoss(mode="multiclass", classes = range(151), from_logits=True, ignore_index=0)
 
     def forward(self, x):
         out1, out2 = self.model(x)
@@ -55,10 +56,10 @@ class LitModel(LightningModule):
         loss = self.loss_function(output[0], labels.long())
         self.log("valid_loss", loss + self.aux_coef*loss_aux, prog_bar=False, on_step=False, on_epoch=True)
 
-        pred_mask = torch.argmax(output, dim=1)
+        pred_mask = torch.argmax(output[0], dim=1)
         tp, fp, fn, tn = smp.metrics.get_stats(pred_mask, labels.long(), mode="multiclass", num_classes=151)
-        micro_mean_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
-        macro_mean_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="macro-imagewise")
+        micro_mean_iou = smp.metrics.iou_score(tp[:,1:], fp[:,1:], fn[:,1:], tn[:,1:], reduction="micro-imagewise") # index0を無視するようにスライス
+        macro_mean_iou = smp.metrics.iou_score(tp[:,1:], fp[:,1:], fn[:,1:], tn[:,1:], reduction="macro-imagewise") # index0を無視するようにスライス
         self.log("micro_mIoU", micro_mean_iou, prog_bar=False, on_step=False, on_epoch=True)
         self.log("macro_mIoU", macro_mean_iou, prog_bar=False, on_step=False, on_epoch=True)
         return loss

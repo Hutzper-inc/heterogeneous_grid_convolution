@@ -7,19 +7,21 @@ from hgresnet import HGResNet
 from torchvision import transforms as T
 from torch.utils.data import DataLoader
 
+BATCH_SIZE = 16
 transform = T.Compose([T.Resize((473,473)),
                        T.Lambda(lambda x: x.convert("RGB")),
                        T.ToTensor()])
-label_transform = T.Compose([T.Resize((60,60)),
+label_transform = T.Compose([T.Resize((473,473)),
                              T.Lambda(lambda x: torch.tensor(np.array(x)))
                              ])
-train_dataset = ADE20k("../../validation_dataset/ADEChallengeData2016", transform, label_transform, "training")
-train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True, persistent_workers=False)
+train_dataset = ADE20k("ADEChallengeData2016", transform, label_transform, "training")
+train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True, persistent_workers=False)
 
-valid_dataset = ADE20k("../../validation_dataset/ADEChallengeData2016", transform, label_transform, "validation")
-valid_dataloader = DataLoader(valid_dataset, batch_size=32, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True, persistent_workers=False)
+valid_dataset = ADE20k("ADEChallengeData2016", transform, label_transform, "validation")
+valid_dataloader = DataLoader(valid_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=os.cpu_count(), pin_memory=True, drop_last=True, persistent_workers=False)
 
-model = HGResNet((473,473), 151, 32).cuda()
+# データセットの形式の都合上、クラス数は151とし、index=0を無視するように実装
+model = HGResNet((473,473), 151, 16).cuda()
 lit_model = LitModel(model)
 trainer = pl.Trainer(
     enable_progress_bar=True,
