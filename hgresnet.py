@@ -3,8 +3,7 @@ from lib.ssn.ssn import ssn_iter, sparse_ssn_iter
 import timm
 import torch
 from torch import nn
-from torchvision import transforms as T
-import numpy as np
+import torch.nn.functional as F
 
 def make_adj_matrix(num_row, num_col):
     adj_matrixs = []
@@ -119,7 +118,7 @@ class HGBlock(nn.Module):
         return x
 
 class DillationConvBlock(nn.Module):
-    def __init__(self, input_shape, dillation_ratio=3):
+    def __init__(self, input_shape, dillation_ratio=1):
         super().__init__()
         self.conv_1 = nn.Conv2d(input_shape[1], input_shape[1], kernel_size=3, dilation=dillation_ratio, padding="same", bias=False)
         self.conv_2 = nn.Conv2d(input_shape[1], input_shape[1], kernel_size=3, dilation=dillation_ratio, padding="same", bias=False)
@@ -148,17 +147,18 @@ class DillationConvBlock(nn.Module):
 class HGResNet(nn.Module):
     def __init__(self, input_hw, class_num, batch_size):
         super().__init__()
+        self.input_hw = input_hw
         self.backbone = timm.create_model("resnet18", pretrained=False, features_only=True, out_indices=[2])
         embed_shape = self.backbone(torch.randn(batch_size, 3, input_hw[0], input_hw[1]))[0].shape
         self.dilation_conv = DillationConvBlock(embed_shape, dillation_ratio=3)
         adj_mats = make_adj_matrix(embed_shape[2], embed_shape[3]).cuda()
         self.hgconv_block = HGBlock(embed_shape, int(embed_shape[2]*embed_shape[3]/64), 3, adj_mats)
         self.segmentation_head_aux = nn.Sequential(nn.Conv2d(embed_shape[1], embed_shape[1], 3, padding="same"),
-                                               nn.BatchNorm2d(embed_shape[1]),
-                                               nn.ReLU(),
-                                               nn.Dropout2d(),
-                                               nn.Conv2d(embed_shape[1], class_num, 1, padding="same"),
-                                               )
+                                                   nn.BatchNorm2d(embed_shape[1]),
+                                                   nn.ReLU(),
+                                                   nn.Dropout2d(),
+                                                   nn.Conv2d(embed_shape[1], class_num, 1, padding="same"),
+                                                   )
         self.segmentation_head = nn.Sequential(nn.Conv2d(embed_shape[1], embed_shape[1], 3, padding="same"),
                                                nn.BatchNorm2d(embed_shape[1]),
                                                nn.ReLU(),
@@ -169,6 +169,8 @@ class HGResNet(nn.Module):
         x = self.backbone(x)[0]
         x = self.dilation_conv(x)
         out1 = self.segmentation_head_aux(x)
+        out1 = F.interpolate(out1, self.input_hw, mode="bilinear", align_corners=False)
         x = self.hgconv_block(x)
         out2 = self.segmentation_head(x)
+        out2 = F.interpolate(out2, self.input_hw, mode="bilinear", align_corners=False)
         return out1, out2
